@@ -11,6 +11,11 @@
       "category": "agent",
       "version": "1.0.0"
     },
+    "agent-ontologist": {
+      "description": "Data-model agent \u2014 owns every schema, migration, view, trigger and grant, and proves each law bites with a scratch-database battery and mutants",
+      "category": "agent",
+      "version": "1.0.0"
+    },
     "agent-refactor": {
       "description": "Automated code refactoring agent \u2014 identifies patterns, applies transformations, validates results",
       "category": "agent",
@@ -305,6 +310,39 @@
       "description": "Interactive tag cloud with weighted sizing, color scaling, and staggered animations",
       "category": "component",
       "version": "1.0.0"
+    },
+    "chatbot-api": {
+      "description": "Express chat API with SSE streaming, Anthropic Claude, rate limiting, and escalation",
+      "category": "ai-assistant",
+      "composableWith": [
+        "chatbot-widget",
+        "chatbot-db",
+        "chatbot-context"
+      ]
+    },
+    "chatbot-context": {
+      "description": "Dynamic context assembly engine with pluggable modules and token budgeting",
+      "category": "ai-assistant",
+      "composableWith": [
+        "chatbot-api"
+      ]
+    },
+    "chatbot-db": {
+      "description": "PostgreSQL schema and repository for chatbot conversations with Prisma + raw SQL options",
+      "category": "ai-assistant",
+      "composableWith": [
+        "chatbot-api",
+        "chatbot-context"
+      ]
+    },
+    "chatbot-widget": {
+      "description": "Drop-in React chat widget with SSE streaming, session persistence, and human escalation",
+      "category": "ai-assistant",
+      "composableWith": [
+        "chatbot-api",
+        "chatbot-db",
+        "chatbot-context"
+      ]
     },
     "commerce-seed": {
       "description": "Autonomous storefront composer \u2014 discovers business model, installs purchase flow components, and wires cart state + product types.",
@@ -1387,9 +1425,9 @@
       "version": "1.0.0"
     },
     "skill-database": {
-      "description": "Database skill \u2014 PostgreSQL schema design, migration patterns, query optimization",
+      "description": "Database ontologist skill \u2014 PostgreSQL schema as constitution: enums, named CHECKs, explicit FK policy, law-naming triggers, re-runnable migrations with grants, scratch-DB batteries proven by mutants, query and index patterns. Pairs with agent-ontologist.",
       "category": "skill",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "skill-design-system": {
       "description": "Agent skill for building and maintaining design system components.",
@@ -1398,6 +1436,11 @@
     },
     "skill-devops": {
       "description": "Infrastructure and deployment skill",
+      "category": "skill",
+      "version": "1.0.0"
+    },
+    "skill-graph-engineering": {
+      "description": "Maintainer's skill for a Postgres + Apache AGE + Qdrant knowledge graph: rebuild-gate-flip projections, tokenizer-true chunking, bound Cypher, rank fusion, retrieval gates, AGE dialect traps",
       "category": "skill",
       "version": "1.0.0"
     },
@@ -1619,39 +1662,6 @@
       "description": "Animated triangle signature easter-egg for client sites",
       "category": "component",
       "version": "1.0.0"
-    },
-    "chatbot-widget": {
-      "description": "Drop-in React chat widget with SSE streaming, session persistence, and human escalation",
-      "category": "ai-assistant",
-      "composableWith": [
-        "chatbot-api",
-        "chatbot-db",
-        "chatbot-context"
-      ]
-    },
-    "chatbot-api": {
-      "description": "Express chat API with SSE streaming, Anthropic Claude, rate limiting, and escalation",
-      "category": "ai-assistant",
-      "composableWith": [
-        "chatbot-widget",
-        "chatbot-db",
-        "chatbot-context"
-      ]
-    },
-    "chatbot-db": {
-      "description": "PostgreSQL schema and repository for chatbot conversations with Prisma + raw SQL options",
-      "category": "ai-assistant",
-      "composableWith": [
-        "chatbot-api",
-        "chatbot-context"
-      ]
-    },
-    "chatbot-context": {
-      "description": "Dynamic context assembly engine with pluggable modules and token budgeting",
-      "category": "ai-assistant",
-      "composableWith": [
-        "chatbot-api"
-      ]
     }
   }
 }
