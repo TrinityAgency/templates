@@ -1,0 +1,8 @@
+{
+  "name": "agent-ontologist",
+  "version": "1.0.0",
+  "description": "Data-model agent — owns every schema, migration, view, trigger and grant, and proves each law bites with a scratch-database battery and mutants",
+  "outputDir": ".claude",
+  "files": ["agents/ontologist.md"],
+  "postMessage": "Ontologist agent installed! Dispatch it before a data model is drawn, not after.\nIt reads its charter from .claude/skills/database/SKILL.md — install that too: npx @trinity369/use skill-database"
+}
