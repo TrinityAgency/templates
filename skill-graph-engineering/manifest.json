@@ -1,0 +1,12 @@
+{
+  "name": "skill-graph-engineering",
+  "version": "1.0.0",
+  "description": "Maintainer's skill for a Postgres + Apache AGE + Qdrant knowledge graph: rebuild-gate-flip projections, tokenizer-true chunking, bound Cypher, rank fusion, retrieval gates, AGE dialect traps",
+  "outputDir": ".claude",
+  "files": [
+    "skills/graph-engineering/SKILL.md",
+    "skills/graph-engineering/references/age-cypher.md",
+    "skills/graph-engineering/references/retrieval.md"
+  ],
+  "postMessage": "Graph Engineering skill installed!\nThe maintainer's skill for the context-graph starter (npx @trinity369/use context-graph): changing chunking, embeddings, search fusion and Cypher safely.\nFor USING the graph (search, remember, recall) use the starter's own context-graph skill."
+}
