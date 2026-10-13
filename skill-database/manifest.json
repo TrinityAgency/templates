@@ -1,8 +1,8 @@
 {
   "name": "skill-database",
-  "version": "1.0.0",
-  "description": "Database skill — PostgreSQL schema design, migration patterns, query optimization, and data integrity",
+  "version": "2.0.0",
+  "description": "Database ontologist skill — PostgreSQL schema as constitution: enums, named CHECKs, explicit FK policy, law-naming triggers, re-runnable migrations with grants, scratch-DB batteries proven by mutants, query and index patterns. Pairs with agent-ontologist.",
   "outputDir": ".claude",
   "files": ["skills/database/SKILL.md"],
-  "postMessage": "Database skill installed! Use for schema design, migrations, query optimization, and PostgreSQL best practices."
+  "postMessage": "Database skill v2 installed at .claude/skills/database/SKILL.md.\nThe schema is the constitution: encode every rule that matters in the database, and prove each law bites with a mutant.\nPairs with the ontologist agent: npx @trinity369/use agent-ontologist"
 }

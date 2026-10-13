@@ -1,504 +1,220 @@
 ---
 name: database
-description: DB migration patterns, query safety, schema design skill for PostgreSQL
+description: PostgreSQL data-model ontologist. The schema is the constitution — what may exist, which states it may occupy, which laws govern its transitions. Use when designing schemas, writing or applying migrations, writing queries, or testing against a database.
 ---
 
-# Database Expert
+# Database Ontologist
 
-PostgreSQL schema design, migration strategies, query optimization, and data integrity patterns for TypeScript projects.
+## First Principle
 
-## Quick Reference
+The schema is not a storage detail — it is the ontology of your system: the set of named things allowed to exist and the laws governing their relationships. Code is ephemeral interpretation; the database is the standing record of what is true. A system thinks only as clearly as its data model lets it.
 
-```bash
-# Generate migration (Prisma)
-npx prisma migrate dev --name <description>
+**DB-maximal design.** If a rule matters, encode it in the schema. Triggers over application checks. Foreign keys over hope. Enums over magic strings. Views over repeated queries. The schema is the constitution; everything else is legislation that can be vetoed.
 
-# Generate migration (Drizzle)
-npx drizzle-kit generate
-npx drizzle-kit migrate
+**If a rule can be broken by a bug in any single service, it belongs in the schema.**
 
-# Inspect schema
-npx prisma studio
-# or:
-npx drizzle-kit studio
+## Five Rules First — Each One Is a Classic Production Incident
 
-# Direct SQL
-psql -d <database> -c "SELECT ..."
+1. **Know which database your shell reaches, and as whom.** A bare `psql` uses `PGHOST`/`PGDATABASE`/`PGUSER` and `~/.pgpass` — on many dev boxes that is production as a superuser. Give exploratory work a read-only role (SELECT, plus `CREATE TEMP` for dry runs). Writes to production happen deliberately, after review, from one place.
+2. **Name the database on every write.** Pass `-d <db>` even when the env "already says so": a profile script sourced *after* your `export PGDATABASE=<scratch>` silently points you back at production. Source first, export second, then measure: `SELECT current_database(), current_user;`.
+3. **The ambient `DATABASE_URL` is inherited by every script and test runner.** Override it for the one command, then assert `current_database()` before the first write. Never run a test suite from a monorepo root where a package's own guard config is not loaded.
+4. **Never hand-apply a migration.** Apply through the project's migration tool so the file is applied *and* recorded. Applied-but-unrecorded is how production drifts from the repo.
+5. **Ledgers are append-only.** A hash-chained event table, an audit log, a signed record: a DELETE there is not a cleanup, it is a broken chain only a backup can repair. Enforce it with triggers, not with care.
 
-# Check table structure
-psql -d <database> -c "\d+ <table_name>"
+## Designing a Data Model
 
-# List all tables
-psql -d <database> -c "\dt"
+Write it in this order — a data-model section in a spec, or a migration plus its test battery.
 
-# Analyze query performance
-psql -d <database> -c "EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT) <query>"
-```
+1. **Ontology** — the named things, and what one row *is* (one row = one what?).
+2. **Vocabulary** — an enum for every state and kind; declared order is policy. Adding a value is a constitutional amendment (`ALTER TYPE … ADD VALUE` cannot be used in the transaction that adds it). Where the vocabulary genuinely churns, a lookup table with an FK beats free text.
+3. **Laws** — in order of preference: a type, a named CHECK, an FK with its `ON DELETE` written out, a trigger whose message names the law and the way out, a view.
+4. **Grants** — re-runnable, inside the migration.
+5. **Retention and derivation** — what is pruned, what is append-only, what is a view over what.
+6. **Battery** — the proof that every law bites (see Testing).
 
-## Decision Framework
+### Refuse, and say why
 
-### ORM Selection
+- A magic string where an enum belongs; a text column that encodes a state.
+- An FK without an explicit `ON DELETE`; a nullable column standing in for a state.
+- A law in application code the schema could hold — "the app will check it".
+- `SELECT *` in a view; a function an earlier migration owns, silently redefined.
+- A DELETE on an append-only ledger.
+- A test that is green against a mocked driver.
 
-```
-Project type?
-+-- Next.js full-stack      --> Prisma (type-safe, migrations, studio)
-+-- Performance-critical    --> Drizzle (SQL-like, lightweight)
-+-- Existing DB schema      --> Drizzle (introspection-first)
-+-- Rapid prototyping       --> Prisma (push-based, auto-relations)
-+-- Complex raw queries     --> raw pg/postgres.js (full control)
-```
+## Laws — How to Encode a Rule
 
-### When to Use Raw SQL
-
-- Complex CTEs, window functions, or recursive queries
-- Bulk operations (COPY, multi-row INSERT)
-- Advisory locks, LISTEN/NOTIFY
-- Performance-critical hot paths where ORM overhead matters
-
-## Schema Design Principles
-
-1. **Normalize first, denormalize for reads** - Start at 3NF, add views/materialized views for query patterns
-2. **UUIDs over auto-increment** - Better for distributed systems, no enumeration attacks
-3. **Soft delete by default** - `deleted_at` timestamp, filter in queries
-4. **Audit columns always** - `created_at`, `updated_at`, `created_by`
-5. **Enum tables over string enums** - Referential integrity, queryable
-6. **Consistent naming** - snake_case for tables/columns, plural table names, `_id` suffix for foreign keys
-7. **Timestamps with timezone** - Always use `TIMESTAMPTZ`, never bare `TIMESTAMP`
-
-### Base Table Template
+**Named CHECKs read as laws.**
 
 ```sql
-CREATE TABLE items (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  -- domain columns here
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  deleted_at TIMESTAMPTZ
-);
+CONSTRAINT signed_with_copy CHECK ((signed_on IS NULL) = (signed_document_id IS NULL)),
+CONSTRAINT end_is_a_fact    CHECK ((ended_on IS NULL) = (end_reason IS NULL)),
+```
 
--- Auto-update updated_at
-CREATE OR REPLACE FUNCTION update_updated_at()
-RETURNS TRIGGER AS $$
+**Freeze what is signed.** A BEFORE UPDATE / BEFORE DELETE trigger whose message names the law and the way out:
+
+```sql
+CREATE OR REPLACE FUNCTION agreements_frozen() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  NEW.updated_at = NOW();
+  IF OLD.signed_on IS NOT NULL THEN
+    RAISE EXCEPTION 'agreements L1: % is frozen once signed — a correction is a new row that supersedes it', OLD.id
+      USING ERRCODE = 'check_violation';
+  END IF;
   RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_items_updated_at
-  BEFORE UPDATE ON items
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+END $$;
 ```
 
-## Migration Workflow
+**Raise with a code.** `USING ERRCODE = 'check_violation'` lets the app map SQLSTATE 23514 to a 409. Give each law a message no other law shares, so a test matching it cannot pass on the wrong law.
 
-### Safe Migration Pattern
+**Foreign keys state their policy.** `CASCADE`, `SET NULL` or `RESTRICT` is a decision about what a death means — write it, never inherit the default by silence. PostgreSQL does not index FK columns for you; add the index.
 
-```sql
--- ALWAYS: Additive migrations in production
--- Step 1: Add new column (nullable or with default)
-ALTER TABLE users ADD COLUMN display_name TEXT;
+**Death is a state, not a missing row.** Prefer an explicit lifecycle (`status` enum, `ended_on` + `end_reason`) over a blanket soft-delete column; reserve hard DELETE for rows nothing else ever pointed at.
 
--- Step 2: Backfill data (in batches for large tables)
-UPDATE users SET display_name = name WHERE display_name IS NULL;
+**Who acts, per transaction.** Set the actor with `set_config('app.actor', $1, true)` inside the transaction and let triggers read `current_setting('app.actor', true)`. Transaction-local settings die with the transaction, and a bare pooled query never opens one — route every audited write through one helper that does.
 
--- Step 3: Add constraints AFTER backfill
-ALTER TABLE users ALTER COLUMN display_name SET NOT NULL;
+**Derived data is declared, never recomputed.** A view is an ontological assertion; application code queries the view, never re-derives the formula. A value that steers a decision is persisted with a timestamp or derivable from a view — write-only data is dead data. `REFRESH MATERIALIZED VIEW CONCURRENTLY` needs a unique index; one duplicate row stops it refreshing while every read looks normal.
 
--- Step 4: Remove old column in NEXT migration (after code deploys)
--- ALTER TABLE users DROP COLUMN name;  -- separate PR
-```
+**Base columns.** `uuid` keys (`gen_random_uuid()`), `timestamptz` always (never bare `timestamp`), `text` over `varchar(n)`, `created_at`/`updated_at` with an `updated_at` trigger, snake_case, plural tables, `_id` FK suffix.
 
-### Migration Template
+## Row-Level Security
+
+A policy binds only for a role that neither owns the table nor has BYPASSRLS — and BYPASSRLS outranks `FORCE ROW LEVEL SECURITY`. An app that connects as the owner or a superuser therefore **fails open**: a query that forgets its tenant predicate returns every tenant's rows and looks like it worked. Connect as a least-privilege role, and prove isolation as that role:
 
 ```sql
--- Migration: Brief description
--- Created: YYYY-MM-DD
--- Description: What this changes and why
-
 BEGIN;
-
--- Add column (nullable or with default)
-ALTER TABLE table_name ADD COLUMN IF NOT EXISTS new_column TYPE;
-
--- Create index concurrently (non-blocking on large tables)
--- NOTE: CREATE INDEX CONCURRENTLY cannot run inside a transaction block
--- Run separately: CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_name ON table_name(column);
-
--- Add comment
-COMMENT ON COLUMN table_name.new_column IS 'Description';
-
--- Backfill (for large tables, use batches)
-UPDATE table_name SET new_column = 'value' WHERE new_column IS NULL;
-
--- Add constraint after backfill
-ALTER TABLE table_name ALTER COLUMN new_column SET NOT NULL;
-
-COMMIT;
+SET LOCAL ROLE app_user;
+SELECT set_config('app.tenant_id', '<tenant uuid>', true);
+SELECT count(*) FROM conversations;   -- own tenant → rows; another tenant → 0
+ROLLBACK;
 ```
 
-### Dangerous Operations (Require Downtime or Careful Planning)
+## Migrations
 
-```
-!!  Renaming columns       --> Add new, backfill, deploy code, drop old
-!!  Changing column types   --> Add new column, migrate data, swap
-!!  Adding NOT NULL without default --> Backfill first
-!!  Dropping columns        --> Ensure no code references first
-!!  Adding unique constraints --> Verify no duplicates exist
-!!  Large table migrations  --> Use batched updates, off-peak hours
-!!  Dropping indexes        --> Verify no queries depend on them
-```
-
-### Batch Update Pattern (Large Tables)
+### Shape
 
 ```sql
--- Update in batches of 1000 to avoid long locks
-DO $$
-DECLARE
-  batch_size INT := 1000;
-  rows_updated INT;
-BEGIN
+-- NNN_<name>.sql — the law this adds, in one line, and why.
+-- What it guards against, which spec section, and what it deliberately does NOT do.
+
+-- 1. Guard prerequisites: fail loudly at the top, never halfway down.
+DO $$ BEGIN
+  IF to_regclass('public.events') IS NULL THEN
+    RAISE EXCEPTION 'NNN needs the events table (migration MMM) applied first';
+  END IF;
+END $$;
+
+-- 2. Idempotent throughout — the battery applies it twice.
+ALTER TABLE t ADD COLUMN IF NOT EXISTS c uuid REFERENCES other(id) ON DELETE RESTRICT;
+CREATE OR REPLACE FUNCTION t_law() RETURNS trigger LANGUAGE plpgsql AS $$ … $$;
+DROP TRIGGER IF EXISTS trg_t_law ON t;
+CREATE TRIGGER trg_t_law BEFORE UPDATE ON t FOR EACH ROW EXECUTE FUNCTION t_law();
+
+-- 3. Grants the objects need, re-runnable. Backups taken with --no-acl lose every GRANT on restore;
+--    a grant that lives only in someone's shell history is gone after the first restore.
+GRANT SELECT ON t TO app_reader;
+```
+
+### Rules
+
+- **Number collisions:** unmerged branches claim numbers too. Before taking one, check every branch: `git log --all --diff-filter=A --name-only --format= -- 'migrations/NNN_*'`.
+- **Add a law as a new function and trigger; don't redefine one an earlier migration owns.** Otherwise the older file silently stops describing what runs, and re-applying it reverts the law. A tool that hashes files cannot see this.
+- **`SELECT *` in a view is expanded at CREATE.** A column added later is invisible until `CREATE OR REPLACE VIEW`, which may only *append* columns.
+- **Deploy order is load-bearing.** A migration ahead of its code, or code ahead of its migration, fails on first contact. Ship them together, in one sitting.
+- **`CREATE INDEX CONCURRENTLY`** cannot run inside a transaction block — give it its own file or step.
+- **Revoking what running code still reads** goes in its own migration, applied after that code is gone.
+
+### Dangerous operations
+
+| Change | Safe path |
+|--------|-----------|
+| rename a column | add, backfill, deploy code, drop — two migrations |
+| change a type | add a new column, migrate, swap |
+| add NOT NULL | backfill first |
+| add UNIQUE | prove no duplicates first |
+| DROP anything | prove no code, view or function depends on it |
+| large-table ALTER / UPDATE | batched, off-peak |
+
+```sql
+-- Batched backfill
+DO $$ DECLARE n int; BEGIN
   LOOP
-    UPDATE table_name
-    SET new_column = compute_value(old_column)
-    WHERE id IN (
-      SELECT id FROM table_name
-      WHERE new_column IS NULL
-      LIMIT batch_size
-      FOR UPDATE SKIP LOCKED
-    );
-    GET DIAGNOSTICS rows_updated = ROW_COUNT;
-    EXIT WHEN rows_updated = 0;
-    PERFORM pg_sleep(0.1);  -- Brief pause to reduce lock contention
+    UPDATE t SET new_col = derive(old_col)
+    WHERE id IN (SELECT id FROM t WHERE new_col IS NULL LIMIT 1000 FOR UPDATE SKIP LOCKED);
+    GET DIAGNOSTICS n = ROW_COUNT;
+    EXIT WHEN n = 0;
+    PERFORM pg_sleep(0.1);
   END LOOP;
 END $$;
 ```
 
-## Query Optimization
+## Testing Against the Database
 
-### Index Strategy
+- **Mocked tests cannot see the schema.** A mocked DB client asserts the shape of a call, never that Postgres accepts it — a green suite can sit on a column that does not exist. Test laws (CHECKs, triggers, FKs) against a real database.
+- **Build a scratch database, never test on production.** Give scratch databases a reserved prefix and make the builder refuse any other name; unset `PGDATABASE` and `DATABASE_URL`; restore the schema only (`pg_dump --schema-only --no-owner --no-privileges`); apply the new migration; fail if a swallowed restore error left the scratch incomplete.
+- **Redirect, then measure.** Point the test URL at the scratch and assert `current_database()` before the first write.
+- **Apply the migration twice.** The second run must be a no-op.
+- **Prove a law bites with mutants.** Green-against-baseline cannot catch a vacuous pass. Drop the trigger, flip a CHECK, widen a column — each mutant must turn the battery red. A test that cannot fail is not a test.
+- **Check SQL without running it.** `PREPARE` each statement inside `BEGIN … ROLLBACK`, one SAVEPOINT each: Postgres resolves every name and plans without executing.
 
-```sql
--- B-tree (default): equality and range queries
-CREATE INDEX idx_users_email ON users(email);
+## Traps
 
--- Composite: match query patterns (leftmost prefix rule)
-CREATE INDEX idx_orders_user_status ON orders(user_id, status);
--- Works for: WHERE user_id = ? AND status = ?
--- Works for: WHERE user_id = ?
--- Does NOT work for: WHERE status = ?
+| Trap | What happens | Do instead |
+|------|--------------|------------|
+| `RETURNS <table>` (not `SETOF`) | always returns one row — all NULLs when nothing matched | test "no match" on a NOT NULL column |
+| `psql -c` with `:'var'` | `-c` never interpolates; `'$VAR'` pasted into SQL is injection | heredoc + `-v var=…` + `:'var'` |
+| `psql -f m.sql \| head` | SIGPIPE kills psql mid-file; the transaction rolls back, `&& echo ok` lies | never pipe a migration; check the exit code |
+| one failed statement in a transaction | the whole transaction is aborted (25P02); a `try/catch` in app code does not contain it | `SAVEPOINT` around optional work |
+| plpgsql `CASE` over statements | every branch is planned, so a branch naming a missing object fails | dispatch with `IF/ELSIF` |
+| postgres.js `${JSON.stringify(x)}::jsonb` | stores a JSON *string*; later `?` and `\|\|` misbehave silently | pass the object or `sql.json(x)`; audit with `jsonb_typeof` |
+| `bigint` in JS drivers | arrives as a string — `Map.get(Number(id))` misses forever | convert at the query boundary |
+| postgres.js tagged query | lazy — an un-awaited query never runs | `await` it |
+| a silent `catch` around a read | "never worked" reads as "no data yet" | log at ERROR; make the empty case testable |
+| a view or projection | can be stale or filtered | verify against the source rows |
+| `ORDER BY id` on random/truncated ids | not time-ordered | order by a timestamp column |
+| a dump with `--no-acl` | a restore loses every GRANT | keep grants in migrations |
 
--- Partial: reduce index size for common filters
-CREATE INDEX idx_active_users ON users(email) WHERE deleted_at IS NULL;
-
--- GIN: array/JSONB containment
-CREATE INDEX idx_tags ON posts USING GIN(tags);
-
--- Expression index: for computed lookups
-CREATE INDEX idx_users_email_lower ON users(LOWER(email));
-
--- Covering index: include columns to avoid table lookup
-CREATE INDEX idx_orders_covering ON orders(user_id) INCLUDE (status, total);
-```
-
-### Query Anti-Patterns
-
-```sql
--- BAD: SELECT * (fetches unnecessary data)
-SELECT * FROM users WHERE id = $1;
--- GOOD: Select only needed columns
-SELECT id, email, name FROM users WHERE id = $1;
-
--- BAD: N+1 queries
-for user in users:
-  orders = SELECT * FROM orders WHERE user_id = user.id
--- GOOD: Join or batch
-SELECT u.id, u.email, o.id as order_id, o.total
-FROM users u LEFT JOIN orders o ON o.user_id = u.id;
-
--- BAD: Offset pagination (scans all skipped rows)
-SELECT * FROM posts ORDER BY created_at LIMIT 20 OFFSET 1000;
--- GOOD: Cursor pagination
-SELECT * FROM posts WHERE created_at < $cursor ORDER BY created_at DESC LIMIT 20;
-
--- BAD: Functions on indexed columns
-SELECT * FROM users WHERE LOWER(email) = 'foo@bar.com';
--- GOOD: Expression index or store normalized
-CREATE INDEX idx_users_email_lower ON users(LOWER(email));
-
--- BAD: OR conditions preventing index use
-SELECT * FROM orders WHERE user_id = $1 OR status = $2;
--- GOOD: UNION ALL for separate index scans
-SELECT * FROM orders WHERE user_id = $1
-UNION ALL
-SELECT * FROM orders WHERE status = $2 AND user_id != $1;
-```
-
-### EXPLAIN ANALYZE Reading
-
-```
-Key metrics to check:
-- Seq Scan on large table        --> Missing index
-- Nested Loop with high rows     --> Consider hash/merge join
-- Sort with high memory          --> Add index for ORDER BY
-- Hash Join memory > work_mem    --> Increase work_mem
-- Rows estimate vs actual far off --> Run ANALYZE
-- Bitmap Heap Scan with lossy    --> Increase work_mem
-- Disk sort (external merge)     --> Increase work_mem or add index
-```
-
-## Prisma Patterns
-
-### Schema Design
-
-```prisma
-model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  name      String
-  role      Role     @default(MEMBER)
-
-  // Relations
-  projects  ProjectMember[]
-
-  // Audit
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  deletedAt DateTime?
-
-  @@index([email])
-  @@map("users")
-}
-
-enum Role {
-  ADMIN
-  MANAGER
-  MEMBER
-  VIEWER
-}
-```
-
-### Efficient Queries
-
-```typescript
-// Batch operations (reduces round-trips)
-const [users, count] = await prisma.$transaction([
-  prisma.user.findMany({ where, take: 20, skip: offset }),
-  prisma.user.count({ where }),
-])
-
-// Select only needed fields
-const user = await prisma.user.findUnique({
-  where: { id },
-  select: { id: true, email: true, role: true },
-})
-
-// Cursor pagination
-const posts = await prisma.post.findMany({
-  take: 20,
-  cursor: { id: lastId },
-  skip: 1, // skip the cursor itself
-  orderBy: { createdAt: "desc" },
-})
-
-// Upsert (insert or update)
-const user = await prisma.user.upsert({
-  where: { email },
-  update: { name, updatedAt: new Date() },
-  create: { email, name, role: "MEMBER" },
-})
-```
-
-## Drizzle Patterns
-
-### Schema Design
-
-```typescript
-import { pgTable, uuid, text, timestamp, pgEnum } from "drizzle-orm/pg-core";
-
-export const roleEnum = pgEnum("role", ["ADMIN", "MANAGER", "MEMBER", "VIEWER"]);
-
-export const users = pgTable("users", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  email: text("email").notNull().unique(),
-  name: text("name").notNull(),
-  role: roleEnum("role").notNull().default("MEMBER"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  deletedAt: timestamp("deleted_at", { withTimezone: true }),
-});
-
-export const orders = pgTable("orders", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").notNull().references(() => users.id),
-  total: text("total").notNull(),
-  status: text("status").notNull().default("pending"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
-```
-
-### Efficient Queries
-
-```typescript
-import { db } from "./db";
-import { users, orders } from "./schema";
-import { eq, and, lt, desc, sql } from "drizzle-orm";
-
-// Select with filter
-const activeUsers = await db
-  .select({ id: users.id, email: users.email })
-  .from(users)
-  .where(eq(users.role, "MEMBER"));
-
-// Join
-const userOrders = await db
-  .select()
-  .from(users)
-  .leftJoin(orders, eq(orders.userId, users.id))
-  .where(eq(users.id, userId));
-
-// Cursor pagination
-const posts = await db
-  .select()
-  .from(posts)
-  .where(lt(posts.createdAt, cursor))
-  .orderBy(desc(posts.createdAt))
-  .limit(20);
-
-// Insert returning
-const [newUser] = await db
-  .insert(users)
-  .values({ email, name, role: "MEMBER" })
-  .returning();
-
-// Update
-await db
-  .update(users)
-  .set({ name: "New Name", updatedAt: new Date() })
-  .where(eq(users.id, userId));
-
-// Raw SQL escape hatch
-const result = await db.execute(
-  sql`SELECT * FROM users WHERE email ILIKE ${`%${search}%`}`
-);
-```
-
-### Drizzle Connection Setup
-
-```typescript
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
-import * as schema from "./schema";
-
-const client = postgres(process.env.DATABASE_URL!);
-export const db = drizzle(client, { schema });
-```
-
-## Connection Management
-
-```typescript
-// Singleton pattern for Prisma in Next.js
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient }
-
-export const prisma = globalForPrisma.prisma ?? new PrismaClient({
-  log: process.env.NODE_ENV === "development" ? ["query"] : [],
-})
-
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma
-```
-
-### Connection Pool Sizing
-
-```
-Formula: connections = (CPU cores * 2) + effective_spindle_count
-- Serverless (Vercel): Use connection pooler (PgBouncer/Supabase pooler)
-- Max pool size: 10-20 for typical apps
-- Statement timeout: 30s for web, 5min for background jobs
-```
-
-### Serverless Considerations
-
-```typescript
-// For serverless environments, use a connection pooler URL
-// and limit max connections to prevent exhaustion
-
-// Prisma
-const prisma = new PrismaClient({
-  datasources: {
-    db: { url: process.env.DATABASE_URL }, // Use pooler URL (port 6543)
-  },
-})
-
-// postgres.js
-const sql = postgres(process.env.DATABASE_URL!, {
-  max: 5,           // Limit connections in serverless
-  idle_timeout: 20, // Close idle connections quickly
-  max_lifetime: 60 * 30, // 30 min max lifetime
-})
-```
-
-## Data Integrity Patterns
+## Query Patterns
 
 ```sql
--- Optimistic locking (prevent lost updates)
-UPDATE projects
-SET name = $1, version = version + 1
-WHERE id = $2 AND version = $3;
--- If 0 rows affected --> concurrent modification, retry
+-- Cursor pagination, never OFFSET (OFFSET scans every skipped row)
+SELECT id, title, created_at FROM posts
+WHERE created_at < $1 ORDER BY created_at DESC LIMIT 20;
 
--- Advisory locks (prevent duplicate processing)
+-- Optimistic locking: 0 rows affected = concurrent modification, retry
+UPDATE projects SET name = $1, version = version + 1 WHERE id = $2 AND version = $3;
+
+-- Idempotency keys
+INSERT INTO operations (idempotency_key, payload) VALUES ($1, $2)
+ON CONFLICT (idempotency_key) DO NOTHING RETURNING id;
+
+-- Advisory lock against duplicate processing
 SELECT pg_try_advisory_lock(hashtext('process-payments'));
--- Do work...
-SELECT pg_advisory_unlock(hashtext('process-payments'));
-
--- Idempotency keys (safe retries)
-CREATE UNIQUE INDEX idx_idempotency ON operations(idempotency_key);
-INSERT INTO operations (idempotency_key, ...)
-ON CONFLICT (idempotency_key) DO NOTHING
-RETURNING *;
-
--- Row-level locking (SELECT FOR UPDATE)
-BEGIN;
-SELECT * FROM accounts WHERE id = $1 FOR UPDATE;
-UPDATE accounts SET balance = balance - $2 WHERE id = $1;
-COMMIT;
-
--- Serializable transactions (strongest isolation)
-BEGIN ISOLATION LEVEL SERIALIZABLE;
--- Critical operations here
-COMMIT;
--- Handle serialization failures with retry logic
 ```
 
-## JSONB Patterns
+- Parameters (`$1`) only — never build SQL by concatenation. A dynamic column or table name comes from typed code, never from a request body.
+- Select the columns you need; `SELECT *` belongs in a throwaway session, not in code.
+- Avoid N+1: join or batch. Avoid functions on indexed columns unless an expression index matches.
 
-```sql
--- Store flexible metadata
-ALTER TABLE users ADD COLUMN metadata JSONB DEFAULT '{}';
+### Indexes
 
--- Query nested fields
-SELECT * FROM users WHERE metadata->>'plan' = 'premium';
-SELECT * FROM users WHERE metadata @> '{"features": ["sso"]}';
+B-tree for equality and range · composite in query order (leftmost prefix) · partial to shrink (`WHERE status = 'open'`) · `INCLUDE` for covering · GIN for arrays, jsonb and tsvector · a trigram GIN index (`pg_trgm` extension) for contains-matching · expression index for `lower(email)`. Measure with `EXPLAIN (ANALYZE, BUFFERS)` before and after — never add one on a guess.
 
--- Index for containment queries
-CREATE INDEX idx_users_metadata ON users USING GIN(metadata);
+**Reading a plan:** Seq Scan on a large table → missing index · Nested Loop over many rows → hash or merge join · Sort spilling to disk → index the ORDER BY or raise `work_mem` · estimates far from actual → `ANALYZE` the table (always after a bulk load).
 
--- Index specific key for equality
-CREATE INDEX idx_users_plan ON users ((metadata->>'plan'));
+## Drivers and ORMs
 
--- Update nested value
-UPDATE users
-SET metadata = jsonb_set(metadata, '{plan}', '"enterprise"')
-WHERE id = $1;
-```
+| Need | Choice |
+|------|--------|
+| full-stack app, generated migrations, studio | Prisma |
+| SQL-shaped TypeScript, introspection-first | Drizzle |
+| CTEs, window functions, COPY, LISTEN/NOTIFY, advisory locks, hot paths | raw `pg` / postgres.js |
 
-## Common Gotchas
+Whatever generates the migration, read the SQL it emits before applying it: an ORM will happily emit a rename as drop-and-add, or a default-less NOT NULL. The laws (named CHECKs, triggers, views, grants) usually live in hand-written SQL migrations beside the generated ones.
 
-1. **Forgetting `WHERE` on UPDATE/DELETE** - Always double-check destructive statements
-2. **Missing indexes on foreign keys** - PostgreSQL does NOT auto-index FK columns
-3. **TIMESTAMP vs TIMESTAMPTZ** - Always use `TIMESTAMPTZ` to avoid timezone bugs
-4. **Connection leaks** - Always close/release connections in `finally` blocks
-5. **Large transactions** - Keep transactions short to avoid long-held locks
-6. **Missing ANALYZE after bulk load** - Stale statistics lead to bad query plans
-7. **Text vs VARCHAR** - In PostgreSQL, `TEXT` and `VARCHAR` perform identically; prefer `TEXT`
-8. **Enum migrations** - PostgreSQL enums are hard to modify; consider text + CHECK constraint instead
+**Connections:** one pool per process (a module-level singleton in dev-reloading frameworks); serverless goes through a pooler with a small `max` (≈5) and short `idle_timeout`; set `statement_timeout` (≈30 s web, minutes for jobs); release connections in `finally`; keep transactions short.
+
+## What to Hand Back
+
+- Files written, each migration with its number.
+- The battery's output, and the mutants' red lines, verbatim.
+- Open decisions, each as one question with your recommendation first.
+- What you did not do, and why.
