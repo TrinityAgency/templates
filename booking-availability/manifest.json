@@ -1,0 +1,9 @@
+{
+  "name": "booking-availability",
+  "version": "1.0.0",
+  "description": "Free appointment slots from working hours, busy footprints, buffers and travel time between zones — pure TypeScript, time-zone and DST correct, multi-resource, never throws.",
+  "outputDir": "src/utils/booking-availability",
+  "files": ["booking-types.ts", "booking-availability.ts", "README.md"],
+  "peerDependencies": {},
+  "postMessage": "booking-availability installed in src/utils/booking-availability/.\nimport { findSlots } from '@/utils/booking-availability/booking-availability'\nRead src/utils/booking-availability/README.md for the inputs and what a slot is."
+}
