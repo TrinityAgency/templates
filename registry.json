@@ -311,6 +311,16 @@
       "category": "component",
       "version": "1.0.0"
     },
+    "booking-availability": {
+      "description": "Free appointment slots from working hours, busy footprints, buffers and travel time \u2014 pure TypeScript, DST-correct, multi-resource",
+      "category": "utility",
+      "version": "1.0.0"
+    },
+    "booking-cancellation": {
+      "description": "Whether a booking can still be cancelled and the exact late fee \u2014 free-until window, basis-point fees, pure TypeScript",
+      "category": "utility",
+      "version": "1.0.0"
+    },
     "booking-schema": {
       "description": "PostgreSQL 16 booking schema that refuses every conflict itself \u2014 double booking, travel, holds, lifecycle; ships its own law battery",
       "category": "module",
