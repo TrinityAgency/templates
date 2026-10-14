@@ -1,0 +1,9 @@
+{
+  "name": "booking-cancellation",
+  "version": "1.0.0",
+  "description": "Whether a booking can still be cancelled and the exact late fee — free-until window, basis-point fees rounded half up, customer vs business, pure TypeScript.",
+  "outputDir": "src/utils/booking-cancellation",
+  "files": ["booking-types.ts", "booking-cancellation.ts", "README.md"],
+  "peerDependencies": {},
+  "postMessage": "booking-cancellation installed in src/utils/booking-cancellation/.\nimport { evaluate } from '@/utils/booking-cancellation/booking-cancellation'\nRead src/utils/booking-cancellation/README.md for the rules."
+}
