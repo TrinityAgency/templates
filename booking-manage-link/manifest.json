@@ -1,0 +1,9 @@
+{
+  "name": "booking-manage-link",
+  "version": "1.0.0",
+  "description": "Account-free manage links for bookings — random 256-bit token, only its SHA-256 stored, constant-time check, one answer for expired/revoked/tampered/unknown; storage as callbacks, node:crypto only.",
+  "outputDir": "src/lib/booking-manage-link",
+  "files": ["booking-types.ts", "booking-manage-link.ts", "README.md"],
+  "peerDependencies": {},
+  "postMessage": "booking-manage-link installed in src/lib/booking-manage-link/ (server-side only).\nimport { issue, verify, revoke } from '@/lib/booking-manage-link/booking-manage-link'\nRead src/lib/booking-manage-link/README.md for the store and the rules."
+}
