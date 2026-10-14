@@ -1,0 +1,9 @@
+{
+  "name": "booking-service-area",
+  "version": "1.0.0",
+  "description": "Which service zone an address falls in, or outside — postcode exact/prefix/range, accent-free locality, optional radius and polygon matchers; pure TypeScript, no network.",
+  "outputDir": "src/utils/booking-service-area",
+  "files": ["booking-types.ts", "booking-service-area.ts", "README.md"],
+  "peerDependencies": {},
+  "postMessage": "booking-service-area installed in src/utils/booking-service-area/.\nimport { resolveZone } from '@/utils/booking-service-area/booking-service-area'\nRead src/utils/booking-service-area/README.md for patterns and precedence."
+}
