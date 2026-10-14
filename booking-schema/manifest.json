@@ -1,0 +1,9 @@
+{
+  "name": "booking-schema",
+  "version": "1.0.0",
+  "description": "PostgreSQL 16 booking schema that refuses every conflict itself: no double booking (buffers, multi-resource), travel time between visits, request holds with deadlines, consented notes with retention, hashed manage links. Ships its own law battery.",
+  "outputDir": "db/booking-schema",
+  "files": ["booking-schema.sql", "battery.sql", "README.md"],
+  "peerDependencies": {},
+  "postMessage": "booking-schema installed in db/booking-schema/.\nInstall: psql -v ON_ERROR_STOP=1 -1 -f db/booking-schema/booking-schema.sql\nProve on a throwaway database: psql -v ON_ERROR_STOP=1 -f db/booking-schema/battery.sql\nRead db/booking-schema/README.md for roles, retention and the write rules."
+}
