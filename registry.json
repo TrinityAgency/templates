@@ -321,9 +321,19 @@
       "category": "utility",
       "version": "1.0.0"
     },
+    "booking-manage-link": {
+      "description": "Account-free manage links for bookings \u2014 256-bit token, only its SHA-256 stored, one answer for every bad link; storage as callbacks",
+      "category": "module",
+      "version": "1.0.0"
+    },
     "booking-schema": {
       "description": "PostgreSQL 16 booking schema that refuses every conflict itself \u2014 double booking, travel, holds, lifecycle; ships its own law battery",
       "category": "module",
+      "version": "1.0.0"
+    },
+    "booking-service-area": {
+      "description": "Which service zone an address falls in, or outside \u2014 postcode patterns, accent-free localities, optional radius/polygon; pure TypeScript, no network",
+      "category": "utility",
       "version": "1.0.0"
     },
     "chatbot-api": {
