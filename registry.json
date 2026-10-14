@@ -311,6 +311,11 @@
       "category": "component",
       "version": "1.0.0"
     },
+    "booking-schema": {
+      "description": "PostgreSQL 16 booking schema that refuses every conflict itself \u2014 double booking, travel, holds, lifecycle; ships its own law battery",
+      "category": "module",
+      "version": "1.0.0"
+    },
     "chatbot-api": {
       "description": "Express chat API with SSE streaming, Anthropic Claude, rate limiting, and escalation",
       "category": "ai-assistant",
