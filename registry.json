@@ -329,7 +329,7 @@
     "booking-schema": {
       "description": "PostgreSQL 16 booking schema that refuses every conflict itself \u2014 double booking, travel, holds, lifecycle; ships its own law battery",
       "category": "module",
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     "booking-service-area": {
       "description": "Which service zone an address falls in, or outside \u2014 postcode patterns, accent-free localities, optional radius/polygon; pure TypeScript, no network",
