@@ -1,6 +1,6 @@
 {
   "name": "booking-schema",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "PostgreSQL 16 booking schema that refuses every conflict itself: no double booking (buffers, multi-resource), travel time between visits, request holds with deadlines, consented notes with retention, hashed manage links. Ships its own law battery.",
   "outputDir": "db/booking-schema",
   "files": ["booking-schema.sql", "battery.sql", "README.md"],

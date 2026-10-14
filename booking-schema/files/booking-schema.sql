@@ -881,8 +881,13 @@ LANGUAGE sql SET search_path = pg_catalog AS $$
     RETURNING 1)
   SELECT count(*)::integer FROM gone
 $$;
+-- Runs as its owner (SECURITY DEFINER), so app_writer, the scheduler's role, prunes expired links
+-- without holding DELETE on manage_links: with DELETE the booking path could erase a link that is
+-- still valid instead of revoking it (revoked_at). One fixed statement, no parameters, search_path
+-- pinned with pg_temp last, EXECUTE revoked from PUBLIC and granted to app_writer only (section 7).
 CREATE OR REPLACE FUNCTION booking.prune_manage_links() RETURNS integer
-LANGUAGE sql SET search_path = pg_catalog AS $$
+LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $$
   WITH gone AS (DELETE FROM booking.manage_links WHERE expires_at <= now() RETURNING 1)
   SELECT count(*)::integer FROM gone
 $$;

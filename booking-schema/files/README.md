@@ -29,6 +29,9 @@ booking lifecycle. It does not search for free time. A slot calculator does that
   per statement. Accepting, declining, cancelling and closing a booking work at any isolation level. If
   your connection pool sets `default_transaction_isolation` to anything else, set it back to
   `read committed` for the transactions that create or move bookings.
+- Fill in `booking.zone_travel` before a zone's first booking: `booking L20` refuses a trip with no
+  travel row across any time gap, even days apart, so a single visit in a zone with no travel rows
+  blocks that resource's bookings in other zones on either side of it.
 - A law held by a trigger refuses with SQLSTATE 23514 and a message starting `booking Lnn:`, which
   names the law and the way out. A law held by a constraint refuses with the constraint's own SQLSTATE
   and names the constraint. The two your app should map:
